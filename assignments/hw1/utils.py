@@ -71,10 +71,17 @@ class ARGS(object):
         return torch.device("cuda" if self.use_cuda else "cpu")
 
 
-def get_data_loader(name='voc', train=True, batch_size=64, split='train', inp_size=224):
+def get_data_loader(name='voc', 
+                    train=True, 
+                    batch_size=64, 
+                    split='train', 
+                    inp_size=224,
+                    perform_transforms=True):
     if name == 'voc':
         from voc_dataset import VOCDataset
-        dataset = VOCDataset(split, inp_size)
+        dataset = VOCDataset(split, 
+                             inp_size, 
+                             perform_transforms=perform_transforms)
     else:
         raise NotImplementedError
 

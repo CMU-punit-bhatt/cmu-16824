@@ -25,12 +25,25 @@ def save_model(epoch, model_name, model):
         model_name, epoch+1)
     torch.save(model.state_dict(), filename)
 
-def train(args, model, optimizer, scheduler=None, model_name='model'):
+def train(args,
+          model, 
+          optimizer, 
+          scheduler=None, 
+          model_name='model', 
+          perform_transforms=True):
     # TODO Q1.5: Initialize your tensorboard writer here!
-    train_loader = utils.get_data_loader(
-        'voc', train=True, batch_size=args.batch_size, split='trainval', inp_size=args.inp_size)
-    test_loader = utils.get_data_loader(
-        'voc', train=False, batch_size=args.test_batch_size, split='test', inp_size=args.inp_size)
+    train_loader = utils.get_data_loader('voc',
+                                         train=True,
+                                         batch_size=args.batch_size,
+                                         split='trainval',
+                                         inp_size=args.inp_size,
+                                         perform_transforms=perform_transforms)
+    test_loader = utils.get_data_loader('voc', 
+                                        train=False, 
+                                        batch_size=args.test_batch_size, 
+                                        split='test', 
+                                        inp_size=args.inp_size,
+                                        perform_transforms=perform_transforms)
     train_writer = SummaryWriter('runs/{}/train/'.format(model_name))
     test_writer = SummaryWriter('runs/{}/test/'.format(model_name))
 

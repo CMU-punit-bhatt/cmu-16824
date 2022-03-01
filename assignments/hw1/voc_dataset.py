@@ -13,6 +13,8 @@ import torch
 import torch.nn
 from PIL import Image
 from torch.utils.data import Dataset
+from torchvision import transforms
+from torchvision.transforms.transforms import ToPILImage
 
 
 class VOCDataset(Dataset):
@@ -24,7 +26,11 @@ class VOCDataset(Dataset):
         INV_CLASS[CLASS_NAMES[i]] = i
 
     # TODO Q1.2: Adjust data_dir according to where **you** stored the data
-    def __init__(self, split, size, data_dir='VOCdevkit/VOC2007/'):
+    def __init__(self,
+                 split,
+                 size,
+                 data_dir='/content/VOCdevkit/VOC2007/',
+                 perform_transforms=True):
         super().__init__()
         self.split = split
         self.data_dir = data_dir
@@ -35,6 +41,9 @@ class VOCDataset(Dataset):
         split_file = os.path.join(data_dir, 'ImageSets/Main', split + '.txt')
         with open(split_file) as fp:
             self.index_list = [line.strip() for line in fp]
+
+        # self.index_list = self.index_list[: 200]
+        self.perform_transforms = perform_transforms
 
         self.anno_list = self.preload_anno()
 
@@ -55,10 +64,32 @@ class VOCDataset(Dataset):
          where both class and weight are a numpy array in shape of [20],
         """
         label_list = []
-        for index in self.index_list:
+        for i, index in enumerate(self.index_list):
+
             fpath = os.path.join(self.ann_dir, index + '.xml')
             tree = ET.parse(fpath)
             # TODO Q1.2: insert your code here, preload labels
+            root = tree.getroot()
+
+            classes = torch.zeros(len(self.CLASS_NAMES))
+            weights = torch.ones(len(self.CLASS_NAMES))
+
+            for obj in root.findall('object'):
+
+                class_name = obj.find('name').text
+                is_difficult = True if obj.find('difficult').text == '1' \
+                  else False
+
+                if class_name not in self.INV_CLASS.keys():
+                  raise KeyError('Key {0} not found.'.format(class_name))
+
+                class_idx = self.INV_CLASS[class_name]
+                classes[class_idx] = 1
+
+                if is_difficult:
+                  weights[class_idx] = 0
+
+            label_list.append([classes, weights])
 
         return label_list
 
@@ -70,11 +101,50 @@ class VOCDataset(Dataset):
         label: LongTensor in shape of (Nc, ) binary label
         weight: FloatTensor in shape of (Nc, ) difficult or not.
         """
+
+        # print('item_h1')
+
         findex = self.index_list[index]
         fpath = os.path.join(self.img_dir, findex + '.jpg')
         # TODO Q1.2: insert your code here. hint: read image, find the labels and weight.
 
-        image = torch.FloatTensor(img)
+        img = Image.open(fpath)
+        lab_vec, wgt_vec = self.anno_list[index]
+
+        # image = torch.FloatTensor(img)
+        image = self.__transform_image__(img)
         label = torch.FloatTensor(lab_vec)
         wgt = torch.FloatTensor(wgt_vec)
+
         return image, label, wgt
+
+    def __transform_image__(self, image):
+
+      transforms_list = None
+
+      if not self.perform_transforms:
+        transforms_list = transforms.Compose([
+            transforms.Resize(self.size),
+            transforms.ToTensor(),
+        ])
+
+      elif self.split == 'test':
+        transforms_list = transforms.Compose([
+            transforms.Resize(int(self.size*1.14)),
+            transforms.CenterCrop(self.size),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225]),
+        ])
+
+      elif self.split == 'trainval':
+        transforms_list = transforms.Compose([       
+            transforms.RandomResizedCrop(self.size),
+            transforms.RandomHorizontalFlip(),
+            transforms.ColorJitter(.4,.4,.4),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225]),
+        ])
+
+      return transforms_list(image)
