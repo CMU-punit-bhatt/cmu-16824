@@ -1,5 +1,10 @@
 import argparse
+import cv2
 import os
+import matplotlib.pyplot as plt
+import numpy as np
+from pickletools import optimize
+from PIL import Image
 import shutil
 import time
 import sys
@@ -25,8 +30,10 @@ from voc_dataset import *
 from utils import *
 
 import wandb
-USE_WANDB = False # use flags, wandb is not convenient for debugging
+USE_WANDB = True # use flags, wandb is not convenient for debugging
+USE_WANDB_IMAGE_GLOBAL = True
 
+torch.manual_seed(0)
 
 model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__")
@@ -119,6 +126,11 @@ parser.add_argument(
 parser.add_argument(
     '--dist-backend', default='gloo', type=str, help='distributed backend')
 parser.add_argument('--vis', action='store_true')
+parser.add_argument(
+    '--avg-pool',
+    dest='avg_pool',
+    action='store_true',
+    help='Performs global average pool instead of maxpool')
 
 best_prec1 = 0
 
@@ -144,7 +156,15 @@ def main():
     # also use an LR scheduler to decay LR by 10 every 30 epochs
     # you can also use PlateauLR scheduler, which usually works well
 
+    # print(args)
 
+    optimizer = torch.optim.SGD(model.parameters(),
+                                lr=args.lr,
+                                momentum=args.momentum,
+                                weight_decay=args.weight_decay)
+    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.7)
+    criterion = torch.nn.BCEWithLogitsLoss()
 
     # optionally resume from a checkpoint
     if args.resume:
@@ -164,13 +184,16 @@ def main():
 
 
     # Data loading code
-    
+
     #TODO: Create Datasets and Dataloaders using VOCDataset - Ensure that the sizes are as required
     # Also ensure that data directories are correct - the ones use for testing by TAs might be different
     # Resize the images to 512x512
 
+    # Not sure if the split terms are right. Need to take a look again.
+    train_dataset = VOCDataset(split='trainval', image_size=512)
+    val_dataset = VOCDataset(split='test', image_size=512)
 
-
+    # See if sampler is needed. Why is the shuffle disabled?
     train_sampler = None
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
@@ -194,20 +217,37 @@ def main():
         validate(val_loader, model, criterion)
         return
 
-    
-    
     # TODO: Create loggers for wandb - ideally, use flags since wandb makes it harder to debug code.
+    if USE_WANDB :
+        wandb.init(project='vlr-hw2')
+        wandb.watch(model, log_freq=100)
+        wandb.define_metric("train/step")
+        wandb.define_metric("train/*", step_metric="train/step")
 
+        wandb.define_metric("val/step")
+        wandb.define_metric("val/*", step_metric="val/step")
+
+    epochs_for_image = [0, args.epochs // 2, args.epochs - 1]
+    val_batches_to_plot = torch.randint(0, len(val_loader), (3,))
 
     for epoch in range(args.start_epoch, args.epochs):
-        adjust_learning_rate(optimizer, epoch)
+        # adjust_learning_rate(optimizer, epoch)
 
-        # train for one epoch
-        train(train_loader, model, criterion, optimizer, epoch)
+        train(train_loader,
+              model,
+              criterion,
+              optimizer,
+              epoch,
+              USE_WANDB_IMAGE=(USE_WANDB_IMAGE_GLOBAL and epoch in epochs_for_image))
 
         # evaluate on validation set
         if epoch % args.eval_freq == 0 or epoch == args.epochs - 1:
-            m1, m2 = validate(val_loader, model, criterion, epoch)
+            m1, m2 = validate(val_loader,
+                              model,
+                              criterion,
+                              epoch,
+                              USE_WANDB_IMAGE_GLOBAL,
+                              val_batches_to_plot)
 
             score = m1 * m2
             # remember best prec@1 and save checkpoint
@@ -221,11 +261,10 @@ def main():
                 'optimizer': optimizer.state_dict(),
             }, is_best)
 
-
-
+        scheduler.step()
 
 #TODO: You can add input arguments if you wish
-def train(train_loader, model, criterion, optimizer, epoch):
+def train(train_loader, model, criterion, optimizer, epoch, USE_WANDB_IMAGE=False):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -241,25 +280,39 @@ def train(train_loader, model, criterion, optimizer, epoch):
         data_time.update(time.time() - end)
 
         # TODO: Get inputs from the data dict
+        images = data['image'].cuda()
+        labels = data['label'].cuda()
+        weights = data['wgt'].cuda()
+        # gt_classes = data['gt_classes']
 
+        optimizer.zero_grad()
 
         # TODO: Get output from model
         # TODO: Perform any necessary functions on the output such as clamping
         # TODO: Compute loss using ``criterion``
-        
 
+        out = model(images)
 
-        # measure metrics and record loss
-        m1 = metric1(imoutput.data, target)
-        m2 = metric2(imoutput.data, target)
-        losses.update(loss.item(), input.size(0))
-        avg_m1.update(m1)
-        avg_m2.update(m2)
+        # Applying a global maxpool or avg pool.
+        if args.avg_pool:
+            class_out = torch.mean(out, (2, 3))
+        else:
+            class_out = torch.amax(out, (2, 3))
 
+        loss = criterion(class_out, labels)
 
         # TODO:
         # compute gradient and do SGD step
+        loss.backward()
+        optimizer.step()
+        # scheduler.step()
 
+        # measure metrics and record loss
+        m1 = metric1(class_out, labels)
+        m2 = metric2(class_out, labels)
+        losses.update(loss.item(), images.size(0))
+        avg_m1.update(m1)
+        avg_m2.update(m2)
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -281,16 +334,45 @@ def train(train_loader, model, criterion, optimizer, epoch):
                       avg_m1=avg_m1,
                       avg_m2=avg_m2))
 
+            # step = epoch * len(train_loader) + i
+
         #TODO: Visualize/log things as mentioned in handout
         #TODO: Visualize at appropriate intervals
+            if USE_WANDB:
+                wandb.log({'train/step': epoch * len(train_loader) + i})
+                wandb.log({'train/loss': losses.val})
+                wandb.log({'train/M1': avg_m1.val})
+                wandb.log({'train/M2': avg_m2.val})
+                wandb.log({'train/LR': optimizer.param_groups[0]['lr']})
 
+        if USE_WANDB_IMAGE and \
+          (i == 0 or i == len(train_loader) // 2):
+            # wandb.log({"train/Input Images": wandb.Image(tensor_to_PIL(images[0]))})
+            
+            image_idx = -1
 
+            j = torch.argsort(labels[image_idx])[-1]
+            heatmap = out[image_idx][j].cpu().detach().numpy()
+            heatmap = cv2.resize(heatmap, (512, 512))
+            heatmap = (heatmap - heatmap.min()) / \
+                      (heatmap.max() - heatmap.min())
+            heatmap = cv2.applyColorMap((heatmap * 255).astype(np.uint8),
+                                        cv2.COLORMAP_MAGMA)
 
+            gt_image = wandb.Image(tensor_to_PIL(images[image_idx]),
+                                   caption='Ground Truth')
+            heatmap = wandb.Image(heatmap, caption=f'{VOCDataset.CLASS_NAMES[j]}')
 
-        # End of train()
+            wandb.log({"train/Heatmaps": [gt_image, heatmap]})
 
+    # End of train()
 
-def validate(val_loader, model, criterion, epoch = 0):
+def validate(val_loader,
+             model,
+             criterion, 
+             epoch = 0, 
+             USE_WANDB_IMAGE=False,
+             batches_to_plot=[0, 1, 2]):
     batch_time = AverageMeter()
     losses = AverageMeter()
     avg_m1 = AverageMeter()
@@ -303,19 +385,30 @@ def validate(val_loader, model, criterion, epoch = 0):
     for i, (data) in enumerate(val_loader):
 
         # TODO: Get inputs from the data dict
-        
+        images = data['image'].cuda()
+        labels = data['label'].cuda()
+        weights = data['wgt'].cuda()
 
+        # TODO: Get output from model
+        # TODO: Perform any necessary functions on the output such as clamping
+        # TODO: Compute loss using ``criterion``
+        out = model(images)
+
+        # Applying a global maxpool or avg pool.
+        if args.avg_pool:
+            class_out = torch.mean(out, (2, 3))
+        else:
+            class_out = torch.amax(out, (2, 3))
+
+        loss = criterion(class_out, labels)
 
         # TODO: Get output from model
         # TODO: Perform any necessary functions on the output
         # TODO: Compute loss using ``criterion``
-        
-
-
         # measure metrics and record loss
-        m1 = metric1(imoutput.data, target)
-        m2 = metric2(imoutput.data, target)
-        losses.update(loss.item(), input.size(0))
+        m1 = metric1(class_out, labels)
+        m2 = metric2(class_out, labels)
+        losses.update(loss.item(), images.size(0))
         avg_m1.update(m1)
         avg_m2.update(m2)
 
@@ -336,9 +429,33 @@ def validate(val_loader, model, criterion, epoch = 0):
                       avg_m1=avg_m1,
                       avg_m2=avg_m2))
 
-        #TODO: Visualize things as mentioned in handout
-        #TODO: Visualize at appropriate intervals
+            #TODO: Visualize things as mentioned in handout
+            #TODO: Visualize at appropriate intervals
 
+            step = epoch // args.eval_freq * len(val_loader) + i
+
+            if USE_WANDB:
+                wandb.log({'val/step': step})
+                wandb.log({'val/loss': losses.val})
+                wandb.log({'val/M1': avg_m1.val})
+                wandb.log({'val/M2': avg_m2.val})
+
+        if USE_WANDB_IMAGE and i in batches_to_plot:
+            # wandb.log({'epoch': epoch,
+            #            "val/Input Images": wandb.Image(tensor_to_PIL(images[0]))})
+            
+            j = torch.argsort(labels[0])[-1]
+            heatmap = out[0][j].cpu().detach().numpy()
+            heatmap = cv2.resize(heatmap, (512, 512))
+            heatmap = (heatmap - heatmap.min()) / \
+                      (heatmap.max() - heatmap.min())
+            heatmap = cv2.applyColorMap((heatmap * 255).astype(np.uint8),
+                                        cv2.COLORMAP_MAGMA)
+
+            gt_image = wandb.Image(tensor_to_PIL(images[0]), caption='Ground Truth')
+            heatmap = wandb.Image(heatmap, caption=f'{VOCDataset.CLASS_NAMES[j]}')
+
+            wandb.log({"val/Heatmaps": [gt_image, heatmap]})
 
     print(' * Metric1 {avg_m1.avg:.3f} Metric2 {avg_m2.avg:.3f}'.format(
         avg_m1=avg_m1, avg_m2=avg_m2))
@@ -371,18 +488,33 @@ class AverageMeter(object):
         self.count += n
         self.avg = self.sum / self.count
 
-
-def metric1(output, target):
+def metric1(output, target, sigmoid_req=True):
     # TODO: Ignore for now - proceed till instructed
     
-    return [0]
+    sig_out = output
 
+    if sigmoid_req:
+        sig_out = torch.sigmoid(output)
 
-def metric2(output, target):
+    ap = compute_ap(target, sig_out)
+
+    return np.mean(ap)
+
+def metric2(output, target, sigmoid_req=True, thresh=0.5):
     #TODO: Ignore for now - proceed till instructed
     
-    return [0]
+    thresh_out = torch.zeros_like(output).cuda()
 
+    if sigmoid_req:
+        thresh_out = torch.sigmoid(output)
+
+    thresh_out[output >= thresh] = 1
+    thresh_out[output < thresh] = 0
+
+    tp = float(torch.sum((thresh_out == target)[target == 1]))
+    fn = float(torch.sum((thresh_out != target)[target == 1]))
+
+    return tp / (tp + fn)
 
 if __name__ == '__main__':
     main()
