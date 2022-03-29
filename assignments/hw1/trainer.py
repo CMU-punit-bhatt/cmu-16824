@@ -26,10 +26,10 @@ def save_model(epoch, model_name, model):
     torch.save(model.state_dict(), filename)
 
 def train(args,
-          model, 
-          optimizer, 
-          scheduler=None, 
-          model_name='model', 
+          model,
+          optimizer,
+          scheduler=None,
+          model_name='model',
           perform_transforms=True):
     # TODO Q1.5: Initialize your tensorboard writer here!
     train_loader = utils.get_data_loader('voc',
@@ -38,10 +38,10 @@ def train(args,
                                          split='trainval',
                                          inp_size=args.inp_size,
                                          perform_transforms=perform_transforms)
-    test_loader = utils.get_data_loader('voc', 
-                                        train=False, 
-                                        batch_size=args.test_batch_size, 
-                                        split='test', 
+    test_loader = utils.get_data_loader('voc',
+                                        train=False,
+                                        batch_size=args.test_batch_size,
+                                        split='test',
                                         inp_size=args.inp_size,
                                         perform_transforms=perform_transforms)
     train_writer = SummaryWriter('runs/{}/train/'.format(model_name))
@@ -91,7 +91,7 @@ def train(args,
 
         # TODO Q3.2: Log Learning rate
         if scheduler is not None:
-            scheduler.step()
+            scheduler.step(loss)
             train_writer.add_scalar('Learning Rate',
                                     scheduler.get_last_lr()[0],
                                     epoch)
