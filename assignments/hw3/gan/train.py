@@ -1,6 +1,7 @@
 from glob import glob
 import os
 import torch
+import torch.optim as optim
 from utils import get_fid, interpolate_latent_space, save_plot
 from torchvision import transforms
 from torchvision.utils import save_image
@@ -12,7 +13,9 @@ def build_transforms():
     # TODO 1.2: Add two transforms:
     # 1. Convert input image to tensor.
     # 2. Rescale input image to be between -1 and 1.
-    ds_transforms = transforms.Compose([..., ...])
+    ds_transforms = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     return ds_transforms
 
 
@@ -24,10 +27,21 @@ def get_optimizers_and_schedulers(gen, disc):
     # The learning rate for the discriminator should be decayed to 0 over 500K steps.
     # The learning rate for the generator should be decayed to 0 over 100K steps.
 
-    optim_discriminator = ...
-    scheduler_discriminator = ...
-    optim_generator = ...
-    scheduler_generator = ...
+    optim_discriminator = optim.Adam(disc.parameters(),
+                                     lr=0.0002,
+                                     betas=(0, 0.9))
+    optim_generator = optim.Adam(gen.parameters(),
+                                 lr=0.0002,
+                                 betas=(0, 0.9))
+
+    scheduler_discriminator = optim.lr_scheduler.LinearLR(optim_discriminator,
+                                                          start_factor=1.,
+                                                          end_factor=1/5e5,
+                                                          total_iters=5e5)
+    scheduler_generator = optim.lr_scheduler.LinearLR(optim_generator,
+                                                      start_factor=1.,
+                                                      end_factor=1/1e5,
+                                                      total_iters=1e5)
     return (
         optim_discriminator,
         scheduler_discriminator,
@@ -66,7 +80,7 @@ def train_model(
     torch.backends.cudnn.benchmark = True
     ds_transforms = build_transforms()
     train_loader = torch.utils.data.DataLoader(
-        Dataset(root="datasets/CUB_200_2011_32", transform=ds_transforms),
+        Dataset(root="/content/gan/datasets/CUB_200_2011_32", transform=ds_transforms),
         batch_size=batch_size,
         shuffle=True,
         num_workers=4,
@@ -92,14 +106,18 @@ def train_model(
                 # 1. Compute generator output -> the number of samples must match the batch size.
                 # 2. Compute discriminator output on the train batch.
                 # 3. Compute the discriminator output on the generated data.
-                discrim_real = ...
-                discrim_fake = ...
+
+                out = gen(len(train_batch))
+
+                discrim_real = disc(train_batch)
+                discrim_fake = disc(out)
 
                 # TODO: 1.5 Compute the interpolated batch and run the discriminator on it.
                 # To compute interpolated data, draw eps ~ Uniform(0, 1)
                 # interpolated data = eps * fake_data + (1-eps) * real_data
-                interp = None
-                discrim_interp = None
+                eps = torch.rand((1,)).cuda()
+                interp = eps * out + (1 - eps) * train_batch
+                discrim_interp = disc(interp)
 
                 discriminator_loss = disc_loss_fn(
                     discrim_real, discrim_fake, discrim_interp, interp, lamb
@@ -112,7 +130,8 @@ def train_model(
             if iters % 5 == 0:
                 with torch.cuda.amp.autocast():
                     # TODO 1.2: Compute samples and evaluate under discriminator.
-                    discrim_fake = ...
+                    out = gen(len(train_batch))
+                    discrim_fake = disc(out)
 
                     generator_loss = gen_loss_fn(discrim_fake)
                 optim_generator.zero_grad(set_to_none=True)
@@ -124,7 +143,8 @@ def train_model(
                 with torch.no_grad():
                     with torch.cuda.amp.autocast():
                         # TODO 1.2: Generate samples using the generator, make sure they lie in the range [0, 1].
-                        generated_samples = ...
+                        generated_samples = gen(len(train_batch))
+                        generated_samples = generated_samples * 0.5 + 0.5
 
                     save_image(
                         generated_samples.data.float(),

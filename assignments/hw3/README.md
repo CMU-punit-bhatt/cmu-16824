@@ -48,7 +48,7 @@ You will need to fill out `networks.py` wherever `#TODO 1.1` is written.
 
 ### Question 1.2: GAN Training Code
 Now we need to setup the training code for the GAN in `train.py`. Most of the code has been provided but please fill out all of the sections that have `#TODO 1.2`.
-Additionally, implement a function to do latent space interpolation (see utils.py).
+Additionally, implement a function to do `latent space interpolation` (see `utils.py`).
 
 ### Question 1.3: Implement GAN loss (20 points)
 In general, we train the generator such that it can fool the discriminator, ie samples from the generator will have high probability under the discriminator. Analogously, we train the discriminator such that it can tell apart real and fake images. This means our loss term encourages the discriminator to assign high probability to real images while assigning low probability to fake images. In this section, we will implement the original GAN losses for the generator and discriminator as described in Algorithm 1 of [1]((https://arxiv.org/pdf/1406.2661.pdf)) in `q1_3.py`.
@@ -85,7 +85,7 @@ Additionally, implement the interpolated batch (which is necessary for the loss)
 * If this section was implemented correctly, you should have a final FID in the ballpark of *50* and the samples should look reasonable at this point (you should see some birds that look reasonable). In your own words, describe why you think this version of the GAN loss was so much more stable and performant than the previous two.
 
 ### Debugging Tips
-1. Run export PYTORCH_JIT=0 when debugging. This will disable JIT, which will slow down the code but enable you to use pdb to debug. In Jupyter notebooks, you can add the following cell to do the same (make sure to do this at the top of the file): 
+1. Run export PYTORCH_JIT=0 when debugging. This will disable JIT, which will slow down the code but enable you to use pdb to debug. In Jupyter notebooks, you can add the following cell to do the same (make sure to do this at the top of the file):
 ```
 import os
 os.environ["PYTORCH_JIT"] = "0"
@@ -99,13 +99,13 @@ We will be training AutoEncoders and VAEs on the CIFAR10 dataset.
 
 ### Question 2.1: AutoEncoder (10 points)
 #### Question 2.1.1: Architecture
-In model.py, fill in the TODOs where 2.1.1 is mentioned. This includes the encoder and decoder network architectures, and the forward passes through each. 
+In model.py, fill in the TODOs where 2.1.1 is mentioned. This includes the encoder and decoder network architectures, and the forward passes through each.
 
 #### Question 2.1.2: Loss function
-In train.py, fill in the TODOs where 2.1.2 is mentioned. This includes the loss function for the autoencoder, which is the MSE loss between the input data and the reconstruction. Important - remember to only average across the batch dimension. 
+In train.py, fill in the TODOs where 2.1.2 is mentioned. This includes the loss function for the autoencoder, which is the MSE loss between the input data and the reconstruction. Important - remember to only average across the batch dimension.
 
 #### Running the auto-encoder
-* Run the command under 2.1  (commands to run can be found at the end of the train.py file). Train the autoencoder for 20 epochs, and try latent sizes 16, 128 and 1024. If your code is correct, the reconstructions should be very clear and sharp. 
+* Run the command under 2.1  (commands to run can be found at the end of the train.py file). Train the autoencoder for 20 epochs, and try latent sizes 16, 128 and 1024. If your code is correct, the reconstructions should be very clear and sharp.
 * Plot the reconstruction loss (for the valiation data) versus number of epochs trained on for all three latent size settings on the same plot.
 * Include the reconstruction plots from epoch19 for each latent setting. Which latent size performs best? What are possible reasons for this?
 
@@ -113,26 +113,26 @@ In train.py, fill in the TODOs where 2.1.2 is mentioned. This includes the loss 
 #### Question 2.2.1: Architecture
 In model.py. fill in the TODOs where 2.2.1 is mentioned. This only includes the fc layer of the VAEEncoder, and the forward pass through the network.
 
-#### Question 2.2.2: Loss function 
-Fill in the recon_loss and kl_loss that make up the total loss for the VAE, under the TODO where 2.2.2 is mentioned. Important - remember to only average across the batch dimension. 
+#### Question 2.2.2: Loss function
+Fill in the recon_loss and kl_loss that make up the total loss for the VAE, under the TODO where 2.2.2 is mentioned. Important - remember to only average across the batch dimension.
 
 #### Running the VAE
-* Run the command under 2.2 (run for 20 epochs). 
+* Run the command under 2.2 (run for 20 epochs).
 * Plot the reconstruction loss and kl loss (for the valiation data) versus number of
-  epochs (separate plots). Recon loss of reference solution is < 145 at epoch 19 (remember to average only across batch dimension). 
-* Include reconstruction and sample plots from epoch 19. 
+  epochs (separate plots). Recon loss of reference solution is < 145 at epoch 19 (remember to average only across batch dimension).
+* Include reconstruction and sample plots from epoch 19.
 
 ### Question 2.3: Beta Variational Auto-Encoder (10 points)
 #### Question 2.3.1: Tuning beta
-The blurriness of the samples can be reduced by tuning the value of beta. 
+The blurriness of the samples can be reduced by tuning the value of beta.
 * Compare the performance of the models with beta values 0.8, 1, 1.2. (Recon loss at epoch 19 of reference solutions are < 130 for beta0.8, and <155 for beta1.2)
 * Comment on the recon loss, kl loss and quality of samples. (Even with tuning, the samples will still be blurry)
 * For what value of beta does the VAE reduce to an auto-encoder?
 
 #### Question 2.3.2: Linear schedule for beta
 Another way to improve the quality of samples is to use an annealing scheme for beta. Fill in TODO for 2.3.2. The value of beta should increase linearly from 0 at epoch 0 to target_val at epoch max_epochs.
-* Include plots of samples from epoch 19. Plot the recon loss across epochs (Recon loss at epoch 19 of reference solution is < 125) 
-* How do these compare to those from the vanilla VAE ? 
+* Include plots of samples from epoch 19. Plot the recon loss across epochs (Recon loss at epoch 19 of reference solution is < 125)
+* How do these compare to those from the vanilla VAE ?
 
 ### Debugging Tips
 1. Make sure the autoencoder can produce good quality reconstructions before moving on to the VAE. While the VAE reconstructions might not be clear and the VAE samples even less so, the autoencoder reconstructions should be very clear.

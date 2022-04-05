@@ -1,4 +1,5 @@
 import torch
+import torchvision
 from cleanfid import fid
 from matplotlib import pyplot as plt
 
@@ -35,4 +36,19 @@ def interpolate_latent_space(gen, path):
     # hold the rest of z to be some fixed random value. Forward the generated samples through the generator
     # and save out an image holding all 100 samples.
     # use torchvision.utils.save_image to save out the visualization.
-    pass
+
+    # z = torch.rand((1, 128)).repeat(100, 1)
+    z = torch.normal(0, 1., (1, 128)).repeat(100, 1)
+
+    fixed_dim1, fixed_dim2 = torch.meshgrid(torch.linspace(-1, 1, 10),
+                                            torch.linspace(-1, 1, 10))
+    fixed_dims = torch.hstack((fixed_dim1.reshape(-1, 1),
+                               fixed_dim2.reshape(-1, 1)))
+    z[..., :2] = fixed_dims
+
+    # Expected out - 100, 3, 32, 32
+    out = gen.forward_given_samples(z.cuda())
+
+    torchvision.utils.save_image(out, path)
+
+

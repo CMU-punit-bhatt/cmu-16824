@@ -14,22 +14,37 @@ import os
 from utils import *
 
 def ae_loss(model, x):
-    """ 
-    TODO 2.1.2: fill in MSE loss between x and its reconstruction. 
-    return loss, {recon_loss = loss} 
     """
-    
+    TODO 2.1.2: fill in MSE loss between x and its reconstruction.
+    return loss, {recon_loss = loss}
+    """
+
+    out = model.encoder(x)
+    out = model.decoder(out)
+
+    assert out.shape == x.shape
+
+    loss = nn.MSELoss(reduction='sum')(out, x) / x.size(0)
+
     return loss, OrderedDict(recon_loss=loss)
 
 def vae_loss(model, x, beta = 1):
     """TODO 2.2.2 : Fill in recon_loss and kl_loss. """
 
-    recon_loss = ...
-    kl_loss = ...
+    means, logstd = model.encoder(x)
+    out = model.decoder(means)
 
-    total_loss = recon_loss + beta*kl_loss
+    vars = torch.exp(logstd) ** 2
+    logvars = torch.log(vars)
+
+    assert out.shape == x.shape
+
+    recon_loss = nn.MSELoss(reduction='sum')(out, x) / x.size(0)
+    kl_loss = torch.sum(means ** 2 + vars - (logvars + 1), dim=1)
+
+    total_loss = recon_loss + beta * kl_loss
+
     return total_loss, OrderedDict(recon_loss=recon_loss, kl_loss=kl_loss)
-
 
 def constant_beta_scheduler(target_val = 1):
     def _helper(epoch):
@@ -37,31 +52,35 @@ def constant_beta_scheduler(target_val = 1):
     return _helper
 
 def linear_beta_scheduler(max_epochs=None, target_val = 1):
-    """TODO 2.3.2 : Fill in helper. The value returned should increase linearly 
+    """TODO 2.3.2 : Fill in helper. The value returned should increase linearly
     from 0 at epoch 0 to target_val at epoch max_epochs """
     def _helper(epoch):
-       ...
+        return target_val / max_epochs * epoch
     return _helper
 
 def run_train_epoch(model, loss_mode, train_loader, optimizer, beta = 1, grad_clip = 1):
     model.train()
     all_metrics = []
     for x, _ in train_loader:
+
         x = preprocess_data(x)
+
         if loss_mode == 'ae':
             loss, _metric = ae_loss(model, x)
+
         elif loss_mode == 'vae':
             loss, _metric = vae_loss(model, x, beta)
+
         all_metrics.append(_metric)
         optimizer.zero_grad()
         loss.backward()
-        
+
         if grad_clip:
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+
         optimizer.step()
 
     return avg_dict(all_metrics)
-
 
 def get_val_metrics(model, loss_mode, val_loader):
     model.eval()
@@ -86,14 +105,14 @@ def main(log_dir, loss_mode = 'vae', beta_mode = 'constant', num_epochs = 20, ba
     variational = True if loss_mode == 'vae' else False
     model = AEModel(variational, latent_size, input_shape = (3, 32, 32)).cuda()
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    
+
     vis_x = next(iter(val_loader))[0][:36]
-    
+
     #beta_mode is for part 2.3, you can ignore it for parts 2.1, 2.2
     if beta_mode == 'constant':
-        beta_fn = constant_beta_scheduler(target_val = target_beta_val) 
+        beta_fn = constant_beta_scheduler(target_val = target_beta_val)
     elif beta_mode == 'linear':
-        beta_fn = linear_beta_scheduler(max_epochs=num_epochs, target_val = target_beta_val) 
+        beta_fn = linear_beta_scheduler(max_epochs=num_epochs, target_val = target_beta_val)
 
     for epoch in range(num_epochs):
         print('epoch', epoch)
@@ -112,9 +131,11 @@ def main(log_dir, loss_mode = 'vae', beta_mode = 'constant', num_epochs = 20, ba
 
 
 if __name__ == '__main__':
-    #TODO: Experiments to run : 
+    #TODO: Experiments to run :
     #2.1 - Auto-Encoder
     #Run for latent_sizes 16, 128 and 1024
+    #main('ae_latent16', loss_mode = 'ae',  num_epochs = 20, latent_size = 16)
+    #main('ae_latent128', loss_mode = 'ae',  num_epochs = 20, latent_size = 128)
     #main('ae_latent1024', loss_mode = 'ae',  num_epochs = 20, latent_size = 1024)
 
     #Q 2.2 - Variational Auto-Encoder
