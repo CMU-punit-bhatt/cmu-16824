@@ -107,37 +107,53 @@ class CoattentionNet(nn.Module):
     Predicts an answer to a question about an image using the Hierarchical Question-Image Co-Attention
     for Visual Question Answering (Lu et al, 2017) paper.
     """
-    def __init__(self):
+    def __init__(self, questions_list_length, answers_list_length, embed_size=512):
         super().__init__()
         ############ 3.3 TODO
-        self.ques_feat_layer = None
+        self.ques_feat_layer = QuestionFeatureExtractor(questions_list_length,
+                                                        embed_size)
 
-        self.word_attention_layer = None
-        self.word_attention_layer = None
-        self.word_attention_layer = None
+        self.word_attention_layer = AlternatingCoAttention()
+        self.phrase_attention_layer = AlternatingCoAttention()
+        self.sentence_attention_layer = AlternatingCoAttention()
 
-        self.Ww = None
-        self.Wp = None
-        self.Ws = None
+        self.Ww = nn.Linear(embed_size, embed_size)
+        self.Wp = nn.Linear(embed_size + embed_size, embed_size)
+        self.Ws = nn.Linear(embed_size + embed_size, embed_size)
 
-        self.dropout = None # please refer to the paper about when you should use dropout
+        self.dropout = nn.Dropout(p=0.5) # please refer to the paper about when you should use dropout
 
-        self.classifier = None
-        ############ 
+        self.classifier = nn.Linear(embed_size, answers_list_length)
+        ############
 
     def forward(self, image_feat, question_encoding):
         ############ 3.3 TODO
         # 1. extract hierarchical question
-        pass
-    
-        # 2. Perform attention between image feature and question feature in each hierarchical layer
-        pass
-        
-        # 3. fuse the attended features
-        pass
-        
-        # 4. predict the final answer using the fused feature
-        pass
 
-        ############ 
-        raise NotImplementedError()
+        image_feat = image_feat.view(-1,
+                                     image_feat.size(1), 
+                                     image_feat.size(2) * image_feat.size(3))
+        image_feat = torch.permute(image_feat, (0, 2, 1))
+
+        # print(question_encoding.shape)
+
+        q_w, q_p, q_s = self.ques_feat_layer(question_encoding)
+
+        # print(q_w.shape)
+
+        # 2. Perform attention between image feature and question feature in each hierarchical layer
+        shat_w, v_w = self.word_attention_layer(q_w, image_feat)
+        shat_p, v_p = self.phrase_attention_layer(q_p, image_feat)
+        shat_s, v_s = self.sentence_attention_layer(q_s, image_feat)
+
+        # 3. fuse the attended features
+        h_w = F.tanh(self.Ww((shat_w + v_w)))
+        h_p = F.tanh(self.Wp(torch.cat(((shat_p + v_p), h_w), dim=-1)))
+        h_s = F.tanh(self.Ws(torch.cat(((shat_s + v_s), h_p), dim=-1)))
+
+        # 4. predict the final answer using the fused feature
+
+        p = self.classifier(h_s)
+
+        return p
+        ############

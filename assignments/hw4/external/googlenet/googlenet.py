@@ -34,8 +34,14 @@ def googlenet(pretrained=False, **kwargs):
 
 class GoogLeNet(nn.Module):
 
-    def __init__(self, num_classes=1000, aux_logits=True, transform_input=False, init_weights=True):
+    def __init__(self,
+                 num_classes=1000,
+                 aux_logits=True,
+                 transform_input=False,
+                 init_weights=True,
+                 only_feature_extractor=False):
         super(GoogLeNet, self).__init__()
+        self.only_feature_extractor = only_feature_extractor
         self.aux_logits = aux_logits
         self.transform_input = transform_input
 
@@ -130,6 +136,10 @@ class GoogLeNet(nn.Module):
         # N x 1024 x 7 x 7
 
         x = self.avgpool(x)
+
+        if self.only_feature_extractor:
+            return x
+
         # N x 1024 x 1 x 1
         x = x.view(x.size(0), -1)
         # N x 1024
